@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Danbooru Tag Sorter</title>
+    <style>
+        :root {
+            --bg-color: #f0f2f5;
+            --card-color: #ffffff;
+            --primary-color: #007bff;
+            --text-color: #333;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            color: var(--text-color);
+            padding: 20px;
+        }
+
+        .container {
+            background-color: var(--card-color);
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 600px;
+        }
+
+        h2 { margin-top: 0; text-align: center; color: var(--primary-color); }
+
+        .input-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+
+        input[type="text"] {
+            width: 100%; padding: 10px;
+            border: 1px solid #ccc; border-radius: 5px;
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 100%; padding: 10px;
+            background-color: var(--primary-color);
+            color: white; border: none; border-radius: 5px;
+            cursor: pointer; font-size: 16px; margin-bottom: 10px;
+            transition: 0.3s;
+        }
+        button:hover { background-color: #0056b3; }
+        button.secondary { background-color: #28a745; }
+        button.secondary:hover { background-color: #218838; }
+
+        textarea {
+            width: 100%; height: 100px; padding: 10px;
+            border: 1px solid #ccc; border-radius: 5px;
+            box-sizing: border-box; resize: vertical;
+            font-family: monospace; font-size: 0.9em;
+        }
+
+        .status { text-align: center; margin-bottom: 10px; min-height: 1.2em; font-size: 0.9em;}
+        .error { color: red; }
+        .success { color: green; }
+        
+        #previewTags {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            min-height: 50px;
+        }
+
+        .tag-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            color: white;
+        }
+
+        .tag-artist { background-color: #c00004; }   
+        .tag-copyright { background-color: #a0a; }    
+        .tag-character { background-color: #00aa00; } 
+        .tag-general { background-color: #007bff; }   
+        .tag-meta { background-color: #fd7e14; }   
+
+        .options { display: flex; gap: 15px; margin-bottom: 10px; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>Danbooru Tag Parser</h2>
+        
+        <div class="input-group">
+            <label for="urlInput">Paste Link Danbooru:</label>
+            <input type="text" id="urlInput" placeholder="https://danbooru.donmai.us/posts/123456">
+        </div>
+
+        <div class="options">
+            <label><input type="checkbox" id="commaCheck" checked> Pakai Koma (,)</label>
+            <label><input type="checkbox" id="underscoreCheck"> Hapus Underscore (_)</label>
+        </div>
+
+        <button onclick="fetchAndSortTags()">Extract</button>
+        
+        <div id="statusMessage" class="status"></div>
+
+        <label>Preview Tags:</label>
+        <div id="previewTags"></div>
+
+        <div class="input-group">
+            <label for="resultArea">Result:</label>
+            <textarea id="resultArea" readonly></textarea>
+        </div>
+
+        <button class="secondary" onclick="copyToClipboard()">Salin Semua</button>
+    </div>
+
+    <script>
+        async function fetchAndSortTags() {
+            const urlInput = document.getElementById('urlInput').value;
+            const statusMsg = document.getElementById('statusMessage');
+            const resultArea = document.getElementById('resultArea');
+            const previewArea = document.getElementById('previewTags');
+            
+            const useComma = document.getElementById('commaCheck').checked;
+            const removeUnderscore = document.getElementById('underscoreCheck').checked;
+
+            statusMsg.textContent = "Memproses...";
+            statusMsg.className = "status";
+            resultArea.value = "";
+            previewArea.innerHTML = "";
+
+            const idMatch = urlInput.match(/posts\/(\d+)/);
+            if (!idMatch) {
+                statusMsg.textContent = "URL tidak valid. ID post tidak ditemukan.";
+                statusMsg.className = "status error";
+                return;
+            }
+
+            const postId = idMatch[1];
+            const apiUrl = `https://danbooru.donmai.us/posts/${postId}.json`;
+
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+
+                const categories = [
+                    { key: 'tag_string_artist', class: 'tag-artist', label: 'Artist' },
+                    { key: 'tag_string_copyright', class: 'tag-copyright', label: 'Copyright' },
+                    { key: 'tag_string_character', class: 'tag-character', label: 'Character' },
+                    { key: 'tag_string_general', class: 'tag-general', label: 'General' },
+                    { key: 'tag_string_meta', class: 'tag-meta', label: 'Meta' }
+                ];
+
+                let finalTagList = [];
+
+                categories.forEach(cat => {
+                    const rawString = data[cat.key];
+                    if (rawString && rawString.trim() !== "") {
+
+                        let tags = rawString.split(' ');
+                        
+                        tags.sort();
+
+                        tags.forEach(tag => {
+                            let cleanTag = tag;
+                            
+                            if (removeUnderscore) {
+                                cleanTag = cleanTag.replace(/_/g, ' ');
+                            }
+
+                            finalTagList.push(cleanTag);
+
+                            const span = document.createElement('span');
+                            span.className = `tag-badge ${cat.class}`;
+                            span.textContent = cleanTag;
+                            previewArea.appendChild(span);
+                        });
+                    }
+                });
+
+                const separator = useComma ? ', ' : ' ';
+                resultArea.value = finalTagList.join(separator);
+
+                statusMsg.textContent = "Sukses! Diurutkan per Kategori & Abjad.";
+                statusMsg.className = "status success";
+
+            } catch (error) {
+                console.error(error);
+                statusMsg.textContent = "Gagal mengambil data. Cek koneksi / CORS.";
+                statusMsg.className = "status error";
+            }
+        }
+
+        function copyToClipboard() {
+            const resultArea = document.getElementById('resultArea');
+            const statusMsg = document.getElementById('statusMessage');
+            
+            if (!resultArea.value) return;
+
+            resultArea.select();
+            resultArea.setSelectionRange(0, 99999);
+            
+            navigator.clipboard.writeText(resultArea.value).then(() => {
+                statusMsg.textContent = "Disalin ke clipboard!";
+            });
+        }
+    </script>
+</body>
+</html>
